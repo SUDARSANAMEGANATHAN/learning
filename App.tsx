@@ -1,31 +1,63 @@
 
 import React, { useState, useEffect } from 'react';
-import { Document, ViewState, UserProgress } from './types';
+import { User, Document, FlashcardSet, QuizAttempt, Activity, AppView } from './types';
 import Sidebar from './components/Sidebar';
+import Navbar from './components/Navbar';
 import Dashboard from './pages/Dashboard';
+import Documents from './pages/Documents';
+import Flashcards from './pages/Flashcards';
+import Profile from './pages/Profile';
 import StudyRoom from './pages/StudyRoom';
 import Auth from './pages/Auth';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<ViewState>('auth');
+  const [view, setView] = useState<AppView>('auth');
+  const [user, setUser] = useState<User | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [flashcardSets, setFlashcardSets] = useState<FlashcardSet[]>([]);
+  const [quizAttempts, setQuizAttempts] = useState<QuizAttempt[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
-  const [user, setUser] = useState<{ name: string } | null>(null);
 
   useEffect(() => {
-    const savedDocs = localStorage.getItem('mindflow_docs');
-    if (savedDocs) setDocuments(JSON.parse(savedDocs));
-    
-    const savedUser = localStorage.getItem('mindflow_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+    // Initial data load from localStorage to simulate DB
+    const storedUser = localStorage.getItem('mindflow_user');
+    const storedDocs = localStorage.getItem('mindflow_docs');
+    const storedSets = localStorage.getItem('mindflow_sets');
+    const storedQuizzes = localStorage.getItem('mindflow_quizzes');
+    const storedActivities = localStorage.getItem('mindflow_activities');
+
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
       setView('dashboard');
     }
+    if (storedDocs) setDocuments(JSON.parse(storedDocs));
+    if (storedSets) setFlashcardSets(JSON.parse(storedSets));
+    if (storedQuizzes) setQuizAttempts(JSON.parse(storedQuizzes));
+    if (storedActivities) setActivities(JSON.parse(storedActivities));
   }, []);
 
-  const saveDocs = (newDocs: Document[]) => {
-    setDocuments(newDocs);
-    localStorage.setItem('mindflow_docs', JSON.stringify(newDocs));
+  const persist = (key: string, data: any) => {
+    localStorage.setItem(`mindflow_${key}`, JSON.stringify(data));
+  };
+
+  const addActivity = (type: Activity['type'], description: string) => {
+    const newActivity: Activity = {
+      id: Math.random().toString(36).substr(2, 9),
+      type,
+      description,
+      timestamp: new Date().toISOString(),
+    };
+    const updated = [newActivity, ...activities].slice(0, 20);
+    setActivities(updated);
+    persist('activities', updated);
+  };
+
+  const handleAuth = (u: User) => {
+    setUser(u);
+    persist('user', u);
+    setView('dashboard');
+    addActivity('document_uploaded', `User ${u.name} logged in.`);
   };
 
   const handleLogout = () => {
@@ -34,80 +66,103 @@ const App: React.FC = () => {
     setView('auth');
   };
 
+  const handleAddDocument = (doc: Document) => {
+    const updated = [...documents, doc];
+    setDocuments(updated);
+    persist('documents', updated);
+    addActivity('document_uploaded', `Uploaded document: ${doc.name}`);
+  };
+
   const activeDoc = documents.find(d => d.id === activeDocId);
 
-  if (view === 'auth') {
-    return <Auth onAuthSuccess={(u) => {
-      setUser(u);
-      localStorage.setItem('mindflow_user', JSON.stringify(u));
-      setView('dashboard');
-    }} />;
+  if (!user || view === 'auth') {
+    return <Auth onAuthSuccess={handleAuth} />;
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans">
+    <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
       <Sidebar 
         currentView={view} 
-        setView={(v) => {
-          if (v === 'documents') setView('dashboard');
-          else setView(v);
-        }} 
+        setView={setView} 
         onLogout={handleLogout} 
-        userName={user?.name || 'Student'}
       />
       
-      <main className="flex-1 overflow-hidden relative">
-        {(view === 'dashboard' || view === 'documents') && (
-          <Dashboard 
-            documents={documents} 
-            onUpload={(doc) => saveDocs([...documents, doc])}
-            onSelectDoc={(id) => {
-              setActiveDocId(id);
-              setView('study-room');
-            }}
-            onDeleteDoc={(id) => saveDocs(documents.filter(d => d.id !== id))}
-          />
-        )}
+      <div className="flex-1 flex flex-col min-w-0">
+        <Navbar user={user} />
         
-        {view === 'study-room' && activeDoc && (
-          <StudyRoom 
-            doc={activeDoc} 
-            onUpdateDoc={(updatedDoc) => {
-              saveDocs(documents.map(d => d.id === updatedDoc.id ? updatedDoc : d));
-            }}
-            onBack={() => setView('dashboard')}
-          />
-        )}
+        <main className="flex-1 overflow-y-auto p-6 lg:p-10">
+          {view === 'dashboard' && (
+            <Dashboard 
+              user={user}
+              documents={documents}
+              flashcardSets={flashcardSets}
+              quizAttempts={quizAttempts}
+              activities={activities}
+              onNavigate={(v) => setView(v)}
+            />
+          )}
 
-        {(view === 'flashcards-view' || view === 'profile') && (
-           <div className="flex flex-col items-center justify-center h-full">
-             <div className="w-24 h-24 bg-emerald-50 text-emerald-500 rounded-3xl flex items-center justify-center text-4xl mb-6">
-               <i className={`fas ${view === 'flashcards-view' ? 'fa-book-open' : 'fa-user-circle'}`}></i>
-             </div>
-             <h2 className="text-2xl font-bold text-slate-800 mb-2">{view === 'flashcards-view' ? 'Flashcard Library' : 'Your Profile'}</h2>
-             <p className="text-slate-400 max-w-sm text-center">This feature is coming soon to your intelligent learning optimization system.</p>
-             <button 
-                onClick={() => setView('dashboard')}
-                className="mt-8 px-8 py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition-all"
-             >
-               Back to Dashboard
-             </button>
-           </div>
-        )}
+          {view === 'documents' && (
+            <Documents 
+              documents={documents}
+              onAddDocument={handleAddDocument}
+              onSelectDocument={(id) => {
+                setActiveDocId(id);
+                setView('study-room');
+              }}
+              onDeleteDocument={(id) => {
+                const updated = documents.filter(d => d.id !== id);
+                setDocuments(updated);
+                persist('documents', updated);
+              }}
+            />
+          )}
 
-        {!activeDoc && view === 'study-room' && (
-           <div className="flex flex-col items-center justify-center h-full">
-             <div className="text-slate-200 text-6xl mb-4"><i className="fas fa-file-invoice"></i></div>
-             <p className="text-slate-500 font-bold">Document not found</p>
-             <button 
-                onClick={() => setView('dashboard')}
-                className="mt-4 px-6 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
-             >
-               Go to Dashboard
-             </button>
-           </div>
-        )}
-      </main>
+          {view === 'flashcards' && (
+            <Flashcards 
+              flashcardSets={flashcardSets}
+              onStudySet={(setId) => {
+                // In this simplified routing, we find the doc and enter study room
+                const set = flashcardSets.find(s => s.id === setId);
+                if (set) {
+                  setActiveDocId(set.documentId);
+                  setView('study-room');
+                }
+              }}
+            />
+          )}
+
+          {view === 'profile' && (
+            <Profile 
+              user={user} 
+              onUpdateUser={(u) => {
+                setUser(u);
+                persist('user', u);
+              }}
+            />
+          )}
+
+          {view === 'study-room' && activeDoc && (
+            <StudyRoom 
+              doc={activeDoc}
+              flashcardSets={flashcardSets}
+              quizAttempts={quizAttempts}
+              onUpdateSets={(sets) => {
+                setFlashcardSets(sets);
+                persist('sets', sets);
+                addActivity('flashcards_generated', `Generated flashcards for ${activeDoc.name}`);
+              }}
+              onAddQuizAttempt={(attempt) => {
+                const updated = [attempt, ...quizAttempts];
+                setQuizAttempts(updated);
+                persist('quizzes', updated);
+                addActivity('quiz_completed', `Completed quiz for ${activeDoc.name} with score ${attempt.score}%`);
+              }}
+              onBack={() => setView('documents')}
+            />
+          )}
+        </main>
+      </div>
     </div>
   );
 };

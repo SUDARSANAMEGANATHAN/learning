@@ -3,23 +3,20 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
-export const generateSummary = async (content: string) => {
+export const generateDocumentSummary = async (content: string) => {
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Summarize the following document text concisely but comprehensively. Use bullet points for key takeaways:\n\n${content}`,
-    config: {
-      temperature: 0.7,
-    }
+    contents: `Summarize the following document text professionally. Focus on core concepts and high-level takeaways:\n\n${content}`,
   });
   return response.text;
 };
 
-export const generateFlashcards = async (content: string) => {
+export const generateStudyFlashcards = async (content: string, count: number = 8) => {
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Extract 5-8 key concepts from this document and create flashcards with a 'front' (term or question) and 'back' (definition or answer):\n\n${content}`,
+    contents: `Based on the text below, generate ${count} educational flashcards. Return JSON format with "front" and "back" fields for each card:\n\n${content}`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -35,20 +32,19 @@ export const generateFlashcards = async (content: string) => {
       },
     },
   });
-  
   try {
     return JSON.parse(response.text || '[]');
   } catch (e) {
-    console.error("Failed to parse flashcards JSON", e);
+    console.error("AI Flashcard Generation Error:", e);
     return [];
   }
 };
 
-export const generateQuiz = async (content: string) => {
+export const generateStudyQuiz = async (content: string, count: number = 5) => {
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Create a 5-question multiple choice quiz based on this text. Each question should have 4 options, a correct answer index (0-3), and a brief explanation:\n\n${content}`,
+    contents: `Create a ${count}-question multiple choice quiz from the following text. Return JSON with "question", "options" (array of 4), "correctAnswer" (0-3), and "explanation":\n\n${content}`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -66,27 +62,23 @@ export const generateQuiz = async (content: string) => {
       },
     },
   });
-
   try {
     return JSON.parse(response.text || '[]');
   } catch (e) {
-    console.error("Failed to parse quiz JSON", e);
+    console.error("AI Quiz Generation Error:", e);
     return [];
   }
 };
 
-export const chatWithDocument = async (query: string, context: string, history: { role: 'user' | 'model', parts: { text: string }[] }[]) => {
+export const chatDocumentAssistant = async (query: string, context: string, history: any[]) => {
   const ai = getAI();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-3-pro-preview',
     contents: [
-      { role: 'user', parts: [{ text: `You are a helpful study assistant. Here is the context from a document:\n\n${context}` }] },
-      ...history.map(h => ({ role: h.role, parts: h.parts })),
+      { role: 'user', parts: [{ text: `You are an expert tutor. Use the following document text as your ONLY source of knowledge: \n\n${context}` }] },
+      ...history,
       { role: 'user', parts: [{ text: query }] }
     ],
-    config: {
-      temperature: 0.8,
-    }
   });
   return response.text;
 };
